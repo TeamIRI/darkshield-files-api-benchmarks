@@ -24,7 +24,7 @@ def destroy_context(context, name):
   requests.post(url, json={'name': name})
 
 
-def benchmark_search_mask(file_path, context, file_size, iterations):
+def benchmark_search_mask(file_path, context, file_size, iterations, chunk_size=4096):
   folder_name = f'results/{file_size}'
   def send():  
     files = {'file': open(file_path,'rb'), 
@@ -41,7 +41,7 @@ def benchmark_search_mask(file_path, context, file_size, iterations):
       parser = StreamingFormDataParser(headers=r.headers)
       parser.register('file', FileTarget(f'{folder_name}/masked{extension}'))
       parser.register('results', FileTarget(f'{folder_name}/results.json'))
-      for chunk in r.iter_content():
+      for chunk in r.iter_content(chunk_size):
         parser.data_received(chunk)
 
   times = timeit.repeat(send, number=1, repeat=iterations)
