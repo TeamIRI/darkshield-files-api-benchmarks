@@ -2,7 +2,6 @@ import logging
 import numpy as np
 import os
 import pathlib
-import requests
 import timeit
 
 from streaming_form_data import StreamingFormDataParser
@@ -10,39 +9,38 @@ from streaming_form_data.targets import FileTarget
 
 host = 'http://localhost:8080/api/darkshield'
 
-def create_context(context, data):
+def create_context(session, context, data):
   url = f'{host}/{context}.create'
   logging.info(f'POST: {url}')
-  with requests.post(url, json=data) as r:
+  with session.post(url, json=data) as r:
     if r.status_code >= 300:
       raise Exception(f"Failed with status {r.status_code}:\n\n{r.json()}")
 
 
-def destroy_context(context, name):
+def destroy_context(session, context, name):
   url = f'{host}/{context}.destroy'
   logging.info(f'POST: {url}')
-  requests.post(url, json={'name': name})
+  session.post(url, json={'name': name})
 
 
-def benchmark_search_mask(file_path, context, file_size, iterations, chunk_size=4096):
+def benchmark_search_mask(session, file_path, context, file_size, iterations, chunk_size=4096):
   folder_name = f'results/{file_size}'
   def send():  
-    files = {'file': open(file_path,'rb'), 
-             'context': context}
-
     url = f'{host}/files/fileSearchContext.mask'
     headers = {'Accept-Encoding': "gzip", 'Transfer-Encoding': "gzip"}
     extension = os.path.splitext(file_path)[1]
     os.makedirs(folder_name, exist_ok=True)
-    with requests.post(url, files=files, stream=True) as r:
-      if r.status_code >= 300:
-        raise Exception(f"Failed with status {r.status_code}:\n\n{r.json()}")
+    with open(file_path, 'rb') as f:
+      files = {'file': f, 'context': context}
+      with session.post(url, files=files, stream=True) as r:
+        if r.status_code >= 300:
+          raise Exception(f"Failed with status {r.status_code}:\n\n{r.json()}")
 
-      parser = StreamingFormDataParser(headers=r.headers)
-      parser.register('file', FileTarget(f'{folder_name}/masked{extension}'))
-      parser.register('results', FileTarget(f'{folder_name}/results.json'))
-      for chunk in r.iter_content(chunk_size):
-        parser.data_received(chunk)
+        parser = StreamingFormDataParser(headers=r.headers)
+        parser.register('file', FileTarget(f'{folder_name}/masked{extension}'))
+        parser.register('results', FileTarget(f'{folder_name}/results.json'))
+        for chunk in r.iter_content(chunk_size):
+          parser.data_received(chunk)
 
   times = timeit.repeat(send, number=1, repeat=iterations)
   results_file = f'{folder_name}/benchmarks.txt'

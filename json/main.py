@@ -45,12 +45,13 @@ if __name__ == '__main__':
       f.write(os.linesep)
       f.write(close_array)
     logging.info(f'Created {file_name}.')
-  try:
-    setup()
-    context = json.dumps({
-        "fileSearchContextName": file_search_context_name,
-        "fileMaskContextName": file_mask_context_name
-    })
-    utils.benchmark_search_mask(file_path, context, file_size, iterations)
-  finally:
-    teardown()
+  with requests.Session() as session:
+    try:
+      setup(session)
+      context = json.dumps({
+          "fileSearchContextName": file_search_context_name,
+          "fileMaskContextName": file_mask_context_name
+      })
+      utils.benchmark_search_mask(session, file_path, context, file_size, iterations)
+    finally:
+      teardown(session)

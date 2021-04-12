@@ -5,7 +5,7 @@ mask_context_name = "MaskContext"
 file_search_context_name = "FileSearchContext"
 file_mask_context_name = "FileMaskContext"
 
-def setup():   
+def setup(session):   
   search_context = {
     "name": search_context_name,
     "matchers": [
@@ -23,7 +23,7 @@ def setup():
       {
         "name": "TestRule",
         "type": "cosort",
-        "expression": "enc_fp_aes256_alphanum($\{NAME\})"
+        "expression": "replace_chars($\{NAME\})"
       }
     ],
     "ruleMatchers": [
@@ -56,14 +56,14 @@ def setup():
     ]
   }
 
-  utils.create_context("searchContext", search_context)
-  utils.create_context("maskContext", mask_context)
-  utils.create_context("files/fileSearchContext", file_search_context)
-  utils.create_context("files/fileMaskContext", file_mask_context)
+  utils.create_context(session, "searchContext", search_context)
+  utils.create_context(session, "maskContext", mask_context)
+  utils.create_context(session, "files/fileSearchContext", file_search_context)
+  utils.create_context(session, "files/fileMaskContext", file_mask_context)
 
 
-def teardown():
-  utils.destroy_context("searchContext", search_context_name)
-  utils.destroy_context("maskContext", mask_context_name)
-  utils.destroy_context("files/fileSearchContext", file_search_context_name)
-  utils.destroy_context("files/fileMaskContext", file_mask_context_name)
+def teardown(session):
+  utils.destroy_context(session, "searchContext", search_context_name)
+  utils.destroy_context(session, "maskContext", mask_context_name)
+  utils.destroy_context(session, "files/fileSearchContext", file_search_context_name)
+  utils.destroy_context(session, "files/fileMaskContext", file_mask_context_name)
