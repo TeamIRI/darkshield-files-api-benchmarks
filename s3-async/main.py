@@ -2,7 +2,6 @@ import aioboto3
 import aiohttp
 import asyncio
 import argparse
-import concurrent.futures
 import json
 import logging
 import timeit
@@ -18,6 +17,8 @@ class PartReader():
   def __init__(self, part):
     self.part = part
 
+  # Note: the chunk size is set in aioboto3.s3.upload_fileobj, which can be configured by
+  # passing in boto3.s3.transfer.TransferConfig to the relevant call.
   async def read(self, chunk_size=8192):
     return await self.part.read_chunk(chunk_size)
 
@@ -32,59 +33,87 @@ async def s3_object_sender(obj, chunk_size=8192):
       chunk = await stream.read(chunk_size)
 
 
-async def main(bucket_name, prefix, profile_name):
+# An asyncio worker that processes s3 objects out of a queue.
+async def s3_obj_worker(name, queue, session, bucket, context):
+  url = 'http://localhost:8080/api/darkshield/files/fileSearchContext.mask'
+  while True:
+    obj = await queue.get()
+    logging.info('%s: Starting task...', name)
+    file_name = obj.key
+    await obj.load() # Load the metadata for this object.
+    content_type = obj.meta.data.get('ContentType', 'application/octet-stream')
+    logging.info('%s: Processing "%s"...', name, file_name)
+    logging.info('%s: Content type: %s', name, content_type)
+    if content_type.startswith('application/x-directory') or file_name.startswith('darkshield-masked'):
+      logging.info('%s: Skipping "%s"...', name, file_name)
+    else:
+      data = aiohttp.FormData()
+      data.add_field('context', context,
+                      filename='context',
+                      content_type='application/json')
+      data.add_field('file', s3_object_sender(obj),
+                    filename=file_name,
+                    content_type=content_type)
+      logging.info('%s: Sending request to API...', name)
+      async with session.post(url, data=data) as r:
+        if r.status >= 300:
+          raise Exception(f"Failed with status {r.status}:\n\n{await r.json()}")
+        
+        logging.info('%s: Processing response...', name)
+        reader = aiohttp.MultipartReader.from_response(r)
+        part = await reader.next()
+        while part is not None:
+          if part.name == 'file':
+            target = f'darkshield-masked/{file_name}'
+            logging.info('%s: Uploading to "%s"...', name, target)
+            await bucket.upload_fileobj(PartReader(part), target)
+            logging.info('Uploaded')
+
+          part = await reader.next()
+
+      logging.info('%s: Processed "%s".', name, file_name)
+
+    queue.task_done()
+    logging.info('%s: Task completed.', name)
+
+
+async def main(bucket_name, prefix, profile_name, num_workers):
   boto_session = aioboto3.session.Session(profile_name=profile_name)
   async with aiohttp.ClientSession() as session, boto_session.resource('s3') as s3:
     try:
       await setup(session)
       bucket = await s3.Bucket(bucket_name)
-      url = 'http://localhost:8080/api/darkshield/files/fileSearchContext.mask'
       context = json.dumps({
         "fileSearchContextName": file_search_context_name,
         "fileMaskContextName": file_mask_context_name
       })
+      
+      queue = asyncio.Queue(num_workers)
+      workers = [asyncio.create_task(s3_obj_worker(f'worker-{i}', queue, session,
+                 bucket, context)) for i in range(num_workers)]
+      logging.info('Created %d workers.', num_workers)
+      
       if prefix:
         logging.info(f"Filtering on prefix '{prefix}'...")
         objects = bucket.objects.filter(Prefix=prefix)
       else:
         logging.info('Extracting all objects from bucket...')
         objects = bucket.objects.all()
-      
-      # TODO: USE THIS FOR PARALLEL processing.
-      # sema = asyncio.BoundedSemaphore(5)
-      async for obj in objects:
-        file_name = obj.key
-        await obj.load() # Load the metadata for this object.
-        content_type = obj.meta.data.get('ContentType', 'application/octet-stream')
-        logging.info('Processing "%s"...', file_name)
-        logging.info('Content type: %s', content_type)
-        if content_type.startswith('application/x-directory') or file_name.startswith('darkshield-masked'):
-          logging.info('Skipping "%s"...', file_name)
-        else:
-          data = aiohttp.FormData()
-          data.add_field('context', context,
-                         filename='context',
-                         content_type='application/json')
-          data.add_field('file', s3_object_sender(obj),
-                        filename=file_name,
-                        content_type=content_type)
-          logging.info('Sending request to API...')
-          async with session.post(url, data=data) as r:
-            if r.status >= 300:
-              raise Exception(f"Failed with status {r.status}:\n\n{await r.json()}")
-            
-            logging.info('Processing response...')
-            reader = aiohttp.MultipartReader.from_response(r)
-            part = await reader.next()
-            while part is not None:
-              if part.name == 'file':
-                target = f'darkshield-masked/{file_name}'
-                logging.info('Uploading to "%s"...', target)
-                await bucket.upload_fileobj(PartReader(part), target)
 
-              part = await reader.next()
-            
-        logging.info('Processed "%s".', file_name)
+      async for obj in objects:
+        await queue.put(obj)
+      
+      # wait for either `queue.join()` to complete or a consumer to raise
+      done, _ = await asyncio.wait([queue.join(), *workers],
+                                    return_when=asyncio.FIRST_COMPLETED)
+      
+      error_raised = set(done) & set(workers)
+      if error_raised:
+        await error_raised.pop()  # propagate the exception
+
+      logging.info('Stopping workers...')
+      for worker in workers:
+        worker.cancel()
     finally:
       await teardown(session)
 
@@ -96,6 +125,9 @@ if __name__ == "__main__":
                         help="The name of the bucket, or the s3 url of the object (starting with 's3://').")
     parser.add_argument('-p', '--profile', metavar='name', type=str, 
                         help='The name of AWS profile to use for the connection (otherwise the default is used).')
+    parser.add_argument('-w', '--workers', metavar='num', type=int, default=4,
+                        help=('The max number of workers to use to process the files. '
+                              'The default number is 4.'))
     
     args = parser.parse_args()
     bucket_name = args.bucket
@@ -110,4 +142,4 @@ if __name__ == "__main__":
         bucket_name = split[0]
         logging.info('Found bucket name "%s".', bucket_name)
 
-    asyncio.run(main(bucket_name, prefix, args.profile))
+    asyncio.run(main(bucket_name, prefix, args.profile, args.workers))
