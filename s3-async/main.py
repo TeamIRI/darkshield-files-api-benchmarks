@@ -4,9 +4,12 @@ import asyncio
 import argparse
 import json
 import logging
+import os
+import pathlib
 import timeit
 
-# from boto3.s3.transfer import TransferConfig
+from aiofile import async_open
+from boto3.s3.transfer import TransferConfig
 
 from setup import setup, teardown, file_mask_context_name, file_search_context_name
 
@@ -17,14 +20,12 @@ class PartReader():
   def __init__(self, part):
     self.part = part
 
-  # Note: the chunk size is set in aioboto3.s3.upload_fileobj, which can be configured by
-  # passing in boto3.s3.transfer.TransferConfig to the relevant call.
-  async def read(self, chunk_size=8192):
+  async def read(self, chunk_size):
     return await self.part.read_chunk(chunk_size)
 
 
 # Used to stream the s3 object directly to the API without storing it all in memory or on file.
-async def s3_object_sender(obj, chunk_size=8192):
+async def s3_object_sender(obj, chunk_size):
   obj = await obj.get()
   async with obj['Body'] as stream:
     chunk = await stream.read(chunk_size)
@@ -34,7 +35,7 @@ async def s3_object_sender(obj, chunk_size=8192):
 
 
 # An asyncio worker that processes s3 objects out of a queue.
-async def s3_obj_worker(name, queue, session, bucket, context):
+async def s3_obj_worker(name, queue, session, bucket, context, chunk_size):
   url = 'http://localhost:8080/api/darkshield/files/fileSearchContext.mask'
   while True:
     obj = await queue.get()
@@ -51,7 +52,7 @@ async def s3_obj_worker(name, queue, session, bucket, context):
       data.add_field('context', context,
                       filename='context',
                       content_type='application/json')
-      data.add_field('file', s3_object_sender(obj),
+      data.add_field('file', s3_object_sender(obj, chunk_size),
                     filename=file_name,
                     content_type=content_type)
       logging.info('%s: Sending request to API...', name)
@@ -66,8 +67,22 @@ async def s3_obj_worker(name, queue, session, bucket, context):
           if part.name == 'file':
             target = f'darkshield-masked/{file_name}'
             logging.info('%s: Uploading to "%s"...', name, target)
-            await bucket.upload_fileobj(PartReader(part), target)
-            logging.info('Uploaded')
+            config = TransferConfig(
+              multipart_threshold=chunk_size
+            )
+            await bucket.upload_fileobj(PartReader(part), target, Config=config)
+          elif part.name == 'results':
+            file_path = pathlib.Path(file_name)
+            parent = 'results' / file_path.parent
+            os.makedirs(parent, exist_ok=True)
+            results_file_name = parent / f'{file_path.stem}.json'
+            logging.info('%s: Saving results in "%s"...', name, results_file_name)
+            async with async_open(results_file_name, 'wb') as f:
+              chunk = await part.read_chunk(chunk_size)
+              while chunk:
+                await f.write(chunk)
+                chunk = await part.read_chunk(chunk_size)
+            logging.info('%s: Results saved.', name)
 
           part = await reader.next()
 
@@ -77,7 +92,7 @@ async def s3_obj_worker(name, queue, session, bucket, context):
     logging.info('%s: Task completed.', name)
 
 
-async def main(bucket_name, prefix, profile_name, num_workers):
+async def main(bucket_name, prefix, profile_name, num_workers, chunk_size):
   boto_session = aioboto3.session.Session(profile_name=profile_name)
   async with aiohttp.ClientSession() as session, boto_session.resource('s3') as s3:
     try:
@@ -87,10 +102,9 @@ async def main(bucket_name, prefix, profile_name, num_workers):
         "fileSearchContextName": file_search_context_name,
         "fileMaskContextName": file_mask_context_name
       })
-      
       queue = asyncio.Queue(num_workers)
       workers = [asyncio.create_task(s3_obj_worker(f'worker-{i}', queue, session,
-                 bucket, context)) for i in range(num_workers)]
+                 bucket, context, chunk_size)) for i in range(num_workers)]
       logging.info('Created %d workers.', num_workers)
       
       if prefix:
@@ -123,9 +137,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Benchmark for S3 bucket search/masking.')
     parser.add_argument('bucket', type=str, metavar='bucket_name_or_url', 
                         help="The name of the bucket, or the s3 url of the object (starting with 's3://').")
+    parser.add_argument('-c', '--chunk_size', type=int, metavar='N', default=8192,
+                        help='The chunk size to use for communicating with S3 and the API. The default is 8192.')
+    # parser.add_argument('-i', '--iterations', metavar='N', type=int, default=10, 
+    #                     help='The number of times the test should be run to obtain the average. Defaults to 10.')
     parser.add_argument('-p', '--profile', metavar='name', type=str, 
                         help='The name of AWS profile to use for the connection (otherwise the default is used).')
-    parser.add_argument('-w', '--workers', metavar='num', type=int, default=4,
+    parser.add_argument('-w', '--workers', metavar='N', type=int, default=4,
                         help=('The max number of workers to use to process the files. '
                               'The default number is 4.'))
     
@@ -142,4 +160,4 @@ if __name__ == "__main__":
         bucket_name = split[0]
         logging.info('Found bucket name "%s".', bucket_name)
 
-    asyncio.run(main(bucket_name, prefix, args.profile, args.workers))
+    asyncio.run(main(bucket_name, prefix, args.profile, args.workers, args.chunk_size))
