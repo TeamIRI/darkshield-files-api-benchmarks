@@ -16,7 +16,7 @@ from setup import setup, teardown, file_mask_context_name, file_search_context_n
 # A class that is used to decorate an aiohttp.PartReader to add the necessary 'read'
 # method to conform to the interface for io.BinaryIO used in 'aioboto3.s3.upload_fileobj'.
 class PartReader():
-  
+
   def __init__(self, part):
     self.part = part
 
@@ -59,7 +59,7 @@ async def s3_obj_worker(name, queue, session, bucket, context, chunk_size):
       async with session.post(url, data=data) as r:
         if r.status >= 300:
           raise Exception(f"Failed with status {r.status}:\n\n{await r.json()}")
-        
+
         logging.info('%s: Processing response...', name)
         reader = aiohttp.MultipartReader.from_response(r)
         part = await reader.next()
@@ -94,7 +94,9 @@ async def s3_obj_worker(name, queue, session, bucket, context, chunk_size):
 
 async def main(bucket_name, prefix, profile_name, num_workers, chunk_size):
   boto_session = aioboto3.session.Session(profile_name=profile_name)
-  async with aiohttp.ClientSession() as session, boto_session.resource('s3') as s3:
+  async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=0)) as session,\
+    boto_session.resource('s3') as s3:
+
     try:
       await setup(session)
       bucket = await s3.Bucket(bucket_name)
@@ -106,7 +108,7 @@ async def main(bucket_name, prefix, profile_name, num_workers, chunk_size):
       workers = [asyncio.create_task(s3_obj_worker(f'worker-{i}', queue, session,
                  bucket, context, chunk_size)) for i in range(num_workers)]
       logging.info('Created %d workers.', num_workers)
-      
+
       if prefix:
         logging.info(f"Filtering on prefix '{prefix}'...")
         objects = bucket.objects.filter(Prefix=prefix)
@@ -120,7 +122,7 @@ async def main(bucket_name, prefix, profile_name, num_workers, chunk_size):
       # wait for either `queue.join()` to complete or a consumer to raise
       done, _ = await asyncio.wait([queue.join(), *workers],
                                     return_when=asyncio.FIRST_COMPLETED)
-      
+
       error_raised = set(done) & set(workers)
       if error_raised:
         await error_raised.pop()  # propagate the exception
@@ -146,7 +148,7 @@ if __name__ == "__main__":
     parser.add_argument('-w', '--workers', metavar='N', type=int, default=4,
                         help=('The max number of workers to use to process the files. '
                               'The default number is 4.'))
-    
+
     args = parser.parse_args()
     bucket_name = args.bucket
     prefix = None
