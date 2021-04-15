@@ -36,7 +36,8 @@ def benchmark_search_mask(session, file_path, context, file_size, media_type, it
         'context': ('context', context, 'application/json'),
         'file': ('file', f, media_type)
       })
-      with session.post(url, data=encoder, headers={'Content-Type': encoder.content_type}) as r:
+      with session.post(url, data=encoder, stream=True,
+                        headers={'Content-Type': encoder.content_type}) as r:
         if r.status_code >= 300:
           raise Exception(f"Failed with status {r.status_code}:\n\n{r.json()}")
 
