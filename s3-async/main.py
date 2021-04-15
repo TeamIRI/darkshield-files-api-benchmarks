@@ -75,7 +75,8 @@ async def s3_obj_worker(name, queue, session, bucket, context, chunk_size):
             file_path = pathlib.Path(file_name)
             parent = 'results' / file_path.parent
             os.makedirs(parent, exist_ok=True)
-            results_file_name = parent / f'{file_path.stem}.json'
+            ext = file_path.suffix.replace('.', '_')
+            results_file_name = parent / f'{file_path.stem}{ext}.json'
             logging.info('%s: Saving results in "%s"...', name, results_file_name)
             async with async_open(results_file_name, 'wb') as f:
               chunk = await part.read_chunk(chunk_size)
