@@ -23,7 +23,7 @@ def setup(session):
       {
         "name": "TestRule",
         "type": "cosort",
-        "expression": "replace_chars($\{NAME\})"
+        "expression": "enc_fp_aes256_alphanum($\{NAME\})"
       }
     ],
     "ruleMatchers": [

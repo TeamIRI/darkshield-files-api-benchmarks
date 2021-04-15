@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import requests
-import timeit
 import sys
 
 # Append parent directory to PYTHON_PATH so we can import utils.py
@@ -52,6 +51,7 @@ if __name__ == '__main__':
           "fileSearchContextName": file_search_context_name,
           "fileMaskContextName": file_mask_context_name
       })
-      utils.benchmark_search_mask(session, file_path, context, file_size, iterations)
+      utils.benchmark_search_mask(session, file_path, context, 
+                                  file_size, 'application/json', iterations)
     finally:
       teardown(session)

@@ -4,6 +4,7 @@ import os
 import pathlib
 import timeit
 
+from requests_toolbelt import MultipartEncoder
 from streaming_form_data import StreamingFormDataParser
 from streaming_form_data.targets import FileTarget
 
@@ -23,7 +24,7 @@ def destroy_context(session, context, name):
   session.post(url, json={'name': name})
 
 
-def benchmark_search_mask(session, file_path, context, file_size, iterations, chunk_size=4096):
+def benchmark_search_mask(session, file_path, context, file_size, media_type, iterations, chunk_size=4096):
   folder_name = f'results/{file_size}'
   def send():  
     url = f'{host}/files/fileSearchContext.mask'
@@ -31,8 +32,11 @@ def benchmark_search_mask(session, file_path, context, file_size, iterations, ch
     extension = os.path.splitext(file_path)[1]
     os.makedirs(folder_name, exist_ok=True)
     with open(file_path, 'rb') as f:
-      files = {'file': f, 'context': context}
-      with session.post(url, files=files, stream=True) as r:
+      encoder = MultipartEncoder(fields={
+        'context': ('context', context, 'application/json'),
+        'file': ('file', f, media_type)
+      })
+      with session.post(url, data=encoder, headers={'Content-Type': encoder.content_type}) as r:
         if r.status_code >= 300:
           raise Exception(f"Failed with status {r.status_code}:\n\n{r.json()}")
 
