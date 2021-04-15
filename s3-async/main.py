@@ -35,7 +35,7 @@ async def s3_object_sender(obj, chunk_size):
 
 
 # An asyncio worker that processes s3 objects out of a queue.
-async def s3_obj_worker(name, queue, session, bucket, context, chunk_size):
+async def s3_obj_worker(name, queue, session, bucket, context, chunk_size, no_results):
   url = 'http://localhost:8080/api/darkshield/files/fileSearchContext.mask'
   while True:
     obj = await queue.get()
@@ -56,10 +56,7 @@ async def s3_obj_worker(name, queue, session, bucket, context, chunk_size):
                     filename=file_name,
                     content_type=content_type)
       logging.info('%s: Sending request to API...', name)
-      async with session.post(url, data=data) as r:
-        if r.status >= 300:
-          raise Exception(f"Failed with status {r.status}:\n\n{await r.json()}")
-
+      async with session.post(url, data=data, raise_for_status=True) as r:
         logging.info('%s: Processing response...', name)
         reader = aiohttp.MultipartReader.from_response(r)
         part = await reader.next()
@@ -71,7 +68,7 @@ async def s3_obj_worker(name, queue, session, bucket, context, chunk_size):
               multipart_threshold=chunk_size
             )
             await bucket.upload_fileobj(PartReader(part), target, Config=config)
-          elif part.name == 'results':
+          elif part.name == 'results' and not no_results:
             file_path = pathlib.Path(file_name)
             parent = 'results' / file_path.parent
             os.makedirs(parent, exist_ok=True)
@@ -93,8 +90,8 @@ async def s3_obj_worker(name, queue, session, bucket, context, chunk_size):
     logging.info('%s: Task completed.', name)
 
 
-async def main(bucket_name, prefix, profile_name, num_workers, chunk_size):
-  boto_session = aioboto3.session.Session(profile_name=profile_name)
+async def main(bucket_name, prefix, args):
+  boto_session = aioboto3.session.Session(profile_name=args.profile)
   async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=0)) as session,\
     boto_session.resource('s3') as s3:
 
@@ -105,10 +102,10 @@ async def main(bucket_name, prefix, profile_name, num_workers, chunk_size):
         "fileSearchContextName": file_search_context_name,
         "fileMaskContextName": file_mask_context_name
       })
-      queue = asyncio.Queue(num_workers)
+      queue = asyncio.Queue(args.workers)
       workers = [asyncio.create_task(s3_obj_worker(f'worker-{i}', queue, session,
-                 bucket, context, chunk_size)) for i in range(num_workers)]
-      logging.info('Created %d workers.', num_workers)
+                 bucket, context, args.chunk_size, args.no_results)) for i in range(args.workers)]
+      logging.info('Created %d workers.', args.workers)
 
       if prefix:
         logging.info(f"Filtering on prefix '{prefix}'...")
@@ -144,6 +141,8 @@ if __name__ == "__main__":
                         help='The chunk size to use for communicating with S3 and the API. The default is 8192.')
     # parser.add_argument('-i', '--iterations', metavar='N', type=int, default=10, 
     #                     help='The number of times the test should be run to obtain the average. Defaults to 10.')
+    parser.add_argument('--no-results', dest='no_results', action='store_true',
+                        help='Disable the generation of results.json files.')
     parser.add_argument('-p', '--profile', metavar='name', type=str, 
                         help='The name of AWS profile to use for the connection (otherwise the default is used).')
     parser.add_argument('-w', '--workers', metavar='N', type=int, default=4,
@@ -163,4 +162,4 @@ if __name__ == "__main__":
         bucket_name = split[0]
         logging.info('Found bucket name "%s".', bucket_name)
 
-    asyncio.run(main(bucket_name, prefix, args.profile, args.workers, args.chunk_size))
+    asyncio.run(main(bucket_name, prefix, args))
