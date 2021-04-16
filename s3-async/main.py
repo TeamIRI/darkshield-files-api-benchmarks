@@ -65,7 +65,8 @@ async def s3_obj_worker(name, queue, session, bucket, context, chunk_size, no_re
             )
             await bucket.upload_fileobj(PartReader(part), target, Config=config)
           elif part.name == 'results' and not no_results:
-            target = f'darkshield-results/{file_name.replace('.', '_')}-results.json'
+            file_name = file_name.replace('.', '_')
+            target = f'darkshield-results/{file_name}-results.json'
             logging.info('%s: Uploading to "%s"...', name, target)
             config = TransferConfig(
               multipart_threshold=chunk_size
