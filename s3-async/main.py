@@ -41,8 +41,9 @@ async def s3_obj_worker(name, queue, session, bucket, context, chunk_size, no_re
     content_type = obj.meta.data.get('ContentType', 'application/octet-stream')
     logging.info('%s: Processing "%s"...', name, file_name)
     logging.info('%s: Content type: %s', name, content_type)
-    if content_type.startswith('application/x-directory') or file_name.startswith('darkshield-masked')\
-      or file_name.startswith('darkshield-results'):
+    if content_type.startswith('application/x-directory')\
+      or file_name.startswith('darkshield-masked')\
+        or file_name.startswith('darkshield-results'):
 
       logging.info('%s: Skipping "%s"...', name, file_name)
     else:
@@ -54,30 +55,34 @@ async def s3_obj_worker(name, queue, session, bucket, context, chunk_size, no_re
                     filename=file_name,
                     content_type=content_type)
       logging.info('%s: Sending request to API...', name)
-      async with session.post(url, data=data, raise_for_status=True) as r:
-        logging.info('%s: Processing response...', name)
-        reader = aiohttp.MultipartReader.from_response(r)
-        part = await reader.next()
-        while part is not None:
-          if part.name == 'file':
-            target = f'darkshield-masked/{file_name}'
-            logging.info('%s: Uploading to "%s"...', name, target)
-            config = TransferConfig(
-              multipart_threshold=chunk_size
-            )
-            await bucket.upload_fileobj(PartReader(part), target, Config=config)
-          elif part.name == 'results' and not no_results:
-            file_name = file_name.replace('.', '_')
-            target = f'darkshield-results/{file_name}-results.json'
-            logging.info('%s: Uploading to "%s"...', name, target)
-            config = TransferConfig(
-              multipart_threshold=chunk_size
-            )
-            await bucket.upload_fileobj(PartReader(part), target, Config=config)
-
+      async with session.post(url, data=data) as r:
+        if r.status != 200:
+          logging.error('%s: Failed to mask with error code %d: %s', 
+                        name, r.status, await r.content.read())
+        else:
+          logging.info('%s: Processing response...', name)
+          reader = aiohttp.MultipartReader.from_response(r)
           part = await reader.next()
+          while part is not None:
+            if part.name == 'file':
+              target = f'darkshield-masked/{file_name}'
+              logging.info('%s: Uploading to "%s"...', name, target)
+              config = TransferConfig(
+                multipart_threshold=chunk_size
+              )
+              await bucket.upload_fileobj(PartReader(part), target, Config=config)
+            elif part.name == 'results' and not no_results:
+              file_name = file_name.replace('.', '_')
+              target = f'darkshield-results/{file_name}-results.json'
+              logging.info('%s: Uploading to "%s"...', name, target)
+              config = TransferConfig(
+                multipart_threshold=chunk_size
+              )
+              await bucket.upload_fileobj(PartReader(part), target, Config=config)
 
-      logging.info('%s: Processed "%s".', name, file_name)
+            part = await reader.next()
+
+        logging.info('%s: Processed "%s".', name, file_name)
 
     queue.task_done()
     logging.info('%s: Task completed.', name)
