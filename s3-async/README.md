@@ -19,11 +19,13 @@ The original and masked files are never loaded fully into memory or stored in
 temporary files on the client. Instead, they are streamed in chunks directly
 between the S3 bucket and the API.
 
-The masked files will be placed under the *masked* key in the root of the original 
-bucket.
+The masked files will be placed under the *darkshield-masked* key in the root of 
+the bucket.
 
-The *results.json* for each masked file will be placed inside of the *results*
-folder. The name of each file will be *{filename}-results.json*.
+The *results.json* for each masked file will be placed inside of the 
+*darkshield-results* key in the root of the bucket. The name of each file will 
+be *{filename}-results.json*. Use the *--no-results* flag to disable results.json
+generation.
 
 To execute, run *python main.py bucket_name_or_url*. The script will use the *default*
 profile in your AWS credentials file in order to access the bucket unless the

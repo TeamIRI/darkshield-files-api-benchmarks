@@ -4,11 +4,7 @@ import asyncio
 import argparse
 import json
 import logging
-import os
-import pathlib
-import timeit
 
-from aiofile import async_open
 from boto3.s3.transfer import TransferConfig
 
 from setup import setup, teardown, file_mask_context_name, file_search_context_name
@@ -69,18 +65,12 @@ async def s3_obj_worker(name, queue, session, bucket, context, chunk_size, no_re
             )
             await bucket.upload_fileobj(PartReader(part), target, Config=config)
           elif part.name == 'results' and not no_results:
-            file_path = pathlib.Path(file_name)
-            parent = 'results' / file_path.parent
-            os.makedirs(parent, exist_ok=True)
-            ext = file_path.suffix.replace('.', '_')
-            results_file_name = parent / f'{file_path.stem}{ext}.json'
-            logging.info('%s: Saving results in "%s"...', name, results_file_name)
-            async with async_open(results_file_name, 'wb') as f:
-              chunk = await part.read_chunk(chunk_size)
-              while chunk:
-                await f.write(chunk)
-                chunk = await part.read_chunk(chunk_size)
-            logging.info('%s: Results saved.', name)
+            target = f'darkshield-results/{file_name.replace('.', '_')}-results.json'
+            logging.info('%s: Uploading to "%s"...', name, target)
+            config = TransferConfig(
+              multipart_threshold=chunk_size
+            )
+            await bucket.upload_fileobj(PartReader(part), target, Config=config)
 
           part = await reader.next()
 
