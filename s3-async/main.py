@@ -41,7 +41,9 @@ async def s3_obj_worker(name, queue, session, bucket, context, chunk_size, no_re
     content_type = obj.meta.data.get('ContentType', 'application/octet-stream')
     logging.info('%s: Processing "%s"...', name, file_name)
     logging.info('%s: Content type: %s', name, content_type)
-    if content_type.startswith('application/x-directory') or file_name.startswith('darkshield-masked'):
+    if content_type.startswith('application/x-directory') or file_name.startswith('darkshield-masked')\
+      or file_name.startswith('darkshield-results'):
+
       logging.info('%s: Skipping "%s"...', name, file_name)
     else:
       data = aiohttp.FormData()
