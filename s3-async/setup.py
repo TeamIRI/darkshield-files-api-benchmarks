@@ -1,4 +1,5 @@
 import async_utils
+import os
 
 search_context_name = "SearchContext"
 mask_context_name = "MaskContext"
@@ -6,7 +7,7 @@ file_search_context_name = "FileSearchContext"
 file_mask_context_name = "FileMaskContext"
 
 
-async def setup(session):   
+async def setup(session, buffer_limit):
   search_context = {
     "name": search_context_name,
     "matchers": [
@@ -46,6 +47,13 @@ async def setup(session):
       }
     ]
   }
+  if buffer_limit is not None:
+    file_search_context['configs'] = {
+      'text': {
+        'bufferLimit': buffer_limit,
+        'delimiter': os.linesep
+      }
+    }
 
   file_mask_context = {
     "name": file_mask_context_name,

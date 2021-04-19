@@ -94,7 +94,7 @@ async def main(bucket_name, prefix, args):
     boto_session.resource('s3') as s3:
 
     try:
-      await setup(session)
+      await setup(session, args.buffer_limit)
       bucket = await s3.Bucket(bucket_name)
       context = json.dumps({
         "fileSearchContextName": file_search_context_name,
@@ -135,6 +135,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Benchmark for S3 bucket search/masking.')
     parser.add_argument('bucket', type=str, metavar='bucket_name_or_url', 
                         help="The name of the bucket, or the s3 url of the object (starting with 's3://').")
+    parser.add_argument('-b', '--buffer-limit', metavar='N', type=int,
+                        help='Set the buffer limit to use for text files in memory-constrained environments.')
     parser.add_argument('-c', '--chunk_size', type=int, metavar='N', default=8192,
                         help='The chunk size to use for communicating with S3 and the API. The default is 8192.')
     # parser.add_argument('-i', '--iterations', metavar='N', type=int, default=10, 
