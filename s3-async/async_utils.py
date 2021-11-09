@@ -1,7 +1,13 @@
 import logging
 
-host = 'http://localhost:8080/api/darkshield'
+# Append parent directory to PYTHON_PATH so we can import utils.py
+current_dir = os.path.dirname(os.path.realpath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
 
+from server_config import hostname, port, is_https
+
+host = f'http{"s" if is_https else ""}://{hostname}:{port}/api/darkshield'
 
 async def create_context(session, context, data):
   url = f'{host}/{context}.create'

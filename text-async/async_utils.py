@@ -3,7 +3,15 @@ import os
 import aiohttp
 import aiofiles
 
-host = 'http://localhost:8080/api/darkshield'
+# Append parent directory to PYTHON_PATH so we can import utils.py
+current_dir = os.path.dirname(os.path.realpath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+from server_config import hostname, port, is_https
+
+host = f'http{"s" if is_https else ""}://{hostname}:{port}/api/darkshield'
+
 
 
 async def create_context(session, context, data):
@@ -35,7 +43,7 @@ async def benchmark_search_mask_async(session, file_name, context, file_size, i,
                        content_type='text/plain')
         async with session.post(url, data=data) as r:
             if r.status >= 300:
-                raise Exception(f"Failed with status {r.status_code}:\n\n{r.json()}")
+                raise Exception(f"Failed with status {r.status}:\n\n{await r.json()}")
             reader = aiohttp.MultipartReader.from_response(r)
             part = await reader.next()
             file_response = await aiofiles.open(f'{file_name}_{i}', 'wb')

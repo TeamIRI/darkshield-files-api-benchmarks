@@ -8,6 +8,14 @@ import logging
 from boto3.s3.transfer import TransferConfig
 
 from setup import setup, teardown, file_mask_context_name, file_search_context_name
+# Append parent directory to PYTHON_PATH so we can import utils.py
+current_dir = os.path.dirname(os.path.realpath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+from server_config import hostname, port, is_https
+
+host = f'http{"s" if is_https else ""}://{hostname}:{port}/api/darkshield'
 
 # A class that is used to decorate an aiohttp.PartReader to add the necessary 'read'
 # method to conform to the interface for io.BinaryIO used in 'aioboto3.s3.upload_fileobj'.
@@ -32,7 +40,7 @@ async def s3_object_sender(obj, chunk_size):
 
 # An asyncio worker that processes s3 objects out of a queue.
 async def s3_obj_worker(name, queue, session, bucket, context, chunk_size, no_results):
-  url = 'http://localhost:8080/api/darkshield/files/fileSearchContext.mask'
+  url = f'{host}/files/fileSearchContext.mask'
   while True:
     obj = await queue.get()
     logging.info('%s: Starting task...', name)

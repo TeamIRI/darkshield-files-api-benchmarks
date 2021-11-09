@@ -8,7 +8,9 @@ from requests_toolbelt import MultipartEncoder
 from streaming_form_data import StreamingFormDataParser
 from streaming_form_data.targets import FileTarget
 
-host = 'http://localhost:8080/api/darkshield'
+from server_config import hostname, port, is_https
+
+host = f'http{"s" if is_https else ""}://{hostname}:{port}/api/darkshield'
 
 def create_context(session, context, data):
   url = f'{host}/{context}.create'
