@@ -2,6 +2,7 @@ import logging
 import os
 import aiohttp
 import aiofiles
+import sys
 
 # Append parent directory to PYTHON_PATH so we can import utils.py
 current_dir = os.path.dirname(os.path.realpath(__file__))

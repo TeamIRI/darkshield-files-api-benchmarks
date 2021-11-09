@@ -4,6 +4,7 @@ import asyncio
 import argparse
 import json
 import logging
+import sys
 
 from boto3.s3.transfer import TransferConfig
 
