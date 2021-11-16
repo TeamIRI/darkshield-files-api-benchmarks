@@ -32,8 +32,10 @@ async def benchmark_search_mask_async(session, file_name, context, file_size, i,
     logging.info(f': Task{i} started.')
     while True:
         folder_name = f'results/{file_size}'
+        file_folder_name = f'files/{file_size}'
         url = f'{host}/files/fileSearchContext.mask'
         os.makedirs(folder_name, exist_ok=True)
+        os.makedirs(file_folder_name, exist_ok=True)
         f = await queue.get()
         data = aiohttp.FormData()
         data.add_field('context', context,
@@ -47,7 +49,7 @@ async def benchmark_search_mask_async(session, file_name, context, file_size, i,
                 raise Exception(f"Failed with status {r.status}:\n\n{await r.json()}")
             reader = aiohttp.MultipartReader.from_response(r)
             part = await reader.next()
-            file_response = await aiofiles.open(f'{file_name}_{i}', 'wb')
+            file_response = await aiofiles.open(f'{file_folder_name}/{file_name}_{i}', 'wb')
             results_response = await aiofiles.open(f'{folder_name}/{file_name}_{i}_results.json', 'wb')
             while part is not None:
                 if part.name == 'file':
