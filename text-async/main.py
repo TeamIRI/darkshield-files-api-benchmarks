@@ -18,7 +18,8 @@ async def main(arguments):
                 "fileSearchContextName": file_search_context_name,
                 "fileMaskContextName": file_mask_context_name
             })
-            print(datetime.datetime.now())
+            start_time = datetime.datetime.now()
+            logging.info(f'Start time: {start_time}')
             queue = asyncio.Queue(arguments.workers)
             workers = [asyncio.create_task(async_utils.benchmark_search_mask_async(session, file_name, context,
                                                                                    arguments.lines, q, queue)) for q in
@@ -36,7 +37,9 @@ async def main(arguments):
             for worker in workers:
                 worker.cancel()
         finally:
-            print(datetime.datetime.now())
+            end_time = datetime.datetime.now()
+            logging.info(f'End time: {end_time}')
+            logging.info(f'Total elapsed time: {end_time - start_time}')
             await teardown(session)
 
 
