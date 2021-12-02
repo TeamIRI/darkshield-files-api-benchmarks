@@ -34,10 +34,16 @@ def benchmark_search_mask(session, file_path, context, file_size, media_type, it
     extension = os.path.splitext(file_path)[1]
     os.makedirs(folder_name, exist_ok=True)
     with open(file_path, 'rb') as f:
-      encoder = MultipartEncoder(fields={
-        'context': ('context', context, 'application/json'),
-        'file': ('file', f, media_type)
-      })
+      if len(media_type) > 0:
+          encoder = MultipartEncoder(fields={
+            'context': ('context', context, 'application/json'),
+            'file': ('file', f, media_type)
+          })
+      else:
+          encoder = MultipartEncoder(fields={
+            'context': ('context', context, 'application/json'),
+            'file': ('file', f)
+          })
       with session.post(url, data=encoder, stream=True,
                         headers={'Content-Type': encoder.content_type}) as r:
         if r.status_code >= 300:
@@ -59,4 +65,5 @@ def benchmark_search_mask(session, file_path, context, file_size, media_type, it
     f.write(f'Median: {np.median(times)} seconds{os.linesep}')
     f.write(f'Stdev: {np.std(times)} seconds{os.linesep}')
     f.write(f'Variance: {np.var(times)} seconds{os.linesep}')
+    f.write(f'Total time: {np.sum(times)} seconds{os.linesep}')
   logging.info(f'Written out {results_file}.')
